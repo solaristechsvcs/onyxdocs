@@ -20,7 +20,7 @@ A self-hosted documentation platform for Node.js, MySQL, Wisp, and Docker. Uses 
 4. Set `port` to the Wisp allocation and leave `host` as `0.0.0.0`. Do not bind the public server IP inside the container.
 5. Set `baseUrl` to your public HTTPS domain. Point Cloudflare Tunnel at the allocation serving this Node process.
 6. Generate two independent random values using the command below. Set `sessionSecret` and `setupKey` separately. Keep them private.
-7. Set startup to `npm install --omit=dev && node src/server.js` in Wisp. Tables initialize automatically. The manual migration command is `npm run migrate`.
+7. Use a Node.js image with Git installed (the included Dockerfile provides it). Set startup to `npm install --omit=dev --package-lock=false && node scripts/start.js` in Wisp. Tables initialize automatically. The manual migration command is `npm run migrate`.
 8. Visit `/setup`, enter the setup key, and create your first owner account. Setup becomes unavailable after the first account exists. Sign in at `/login`, then open `/admin`.
 
 Generate each secret in a Node console or the Wisp console where commands are supported:
@@ -56,7 +56,31 @@ Owners cannot demote themselves, so at least one owner remains. Password changes
 
 Create categories first and select a parent for nested sections. Then add an article, choose a unique URL slug, write Markdown, and enable Published when ready. Smaller sort positions appear first; ties sort by title. Search covers published titles, summaries and Markdown content. Article deletion permanently deletes its revisions. Categories with child categories cannot be deleted until those children are moved or removed; articles in a deleted category become uncategorized.
 
-Images use external URLs in Markdown. This version does not include uploads, public accounts, email delivery, SSO, or an automatic updater. Update application files from GitHub using your normal Wisp deployment process, preserve `config.js`, and restart.
+Images use external URLs in Markdown. This version does not include uploads, public accounts, email delivery, or SSO.
+
+## Automatic updates
+
+`npm start` (or `node scripts/start.js`) runs a supervisor that starts the site, checks the configured public GitHub repository immediately and every five minutes, stages changed commits with their own dependencies, then restarts the application. It works even if the initial installation was uploaded as files rather than cloned with Git. Git, npm, outbound HTTPS to GitHub/npm, and write access to the application directory are required. An update failure is logged in the Wisp console; download/install failures leave the running site in place.
+
+The optional `updater` block in `config.js` defaults to:
+
+```js
+updater: {
+  enabled: true,
+  repository: 'https://github.com/solaristechsvcs/onyxdocs.git',
+  branch: 'main',
+  intervalSeconds: 300,
+  startupTimeoutSeconds: 60
+},
+```
+
+Set `enabled: false` to disable checks, then restart Wisp. Configuration changes take effect after a Wisp restart. This updater supports public GitHub repositories; do not put credentials in the repository URL.
+
+Updates are installed under `.onyx-updates/releases/`. The root `config.js` is shared with each release through an absolute configuration path and is never overwritten. The supervisor does not reset or stash local files. Root source edits remain on disk but are not included in downloaded releases: commit intended code changes to GitHub. MySQL remains the content store. A small `active.json` file remembers the selected release across Wisp restarts. Keep this directory on persistent storage if using Docker.
+
+There is brief downtime during the application switch. The new app must complete database initialization and start listening before it is selected. Failed startup restores the previous application; database changes are not reversed. Keep future migrations compatible with the previous version and maintain database backups. Successful releases retain the three most recent staged versions plus the active/previous versions when needed. The root supervisor itself is not replaced during live updates; supervisor changes require updating the root `scripts/` files from GitHub and restarting Wisp.
+
+To bypass the supervisor for troubleshooting, use `npm run start:direct`. To return to the originally installed app, stop Wisp, rename `.onyx-updates/active.json`, and start with updates disabled. Preserve `config.js` and the database.
 
 Set `welcomeTitle`, `welcomeDescription`, `mainSiteUrl`, and `discordUrl` in `config.js` to customize the welcome area and navigation. Category image URLs are editable in the staff category screen. No content or artwork is copied from the reference site.
 
@@ -70,4 +94,4 @@ npm test
 npm run check
 ```
 
-The helper tests cover HTML escaping, safe slugs, nesting, and circular category rejection. Full runtime testing requires a MySQL database. Verify setup, login, category nesting, draft visibility, publishing, search, revision restore, role permissions and mobile pages against a disposable database before production use.
+Tests cover HTML escaping, safe slugs, nesting, circular category rejection, staged updates, unchanged commits, failed installs, branch changes, state path validation, process readiness, and activation rollback. Network operations in updater unit tests use a simulated command runner. Full runtime testing requires network access and a MySQL database. Verify setup, login, category nesting, draft visibility, publishing, search, revision restore, role permissions and mobile pages against a disposable database before production use.

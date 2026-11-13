@@ -13,5 +13,12 @@ module.exports = {
   secureCookies: true,
   // Generate a separate random value. Required to create the first owner.
   setupKey: 'REPLACE_WITH_A_SEPARATE_RANDOM_SETUP_KEY',
+  updater: {
+    enabled: true,
+    repository: 'https://github.com/solaristechsvcs/onyxdocs.git',
+    branch: 'main',
+    intervalSeconds: 300,
+    startupTimeoutSeconds: 60
+  },
   mysql: { host: '127.0.0.1', port: 3306, user: 'onyxdocs', password: '', database: 'onyxdocs', connectionLimit: 10 }
 };

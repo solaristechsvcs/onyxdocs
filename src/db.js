@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 const fs = require('node:fs');
 const path = require('node:path');
-const configPath = path.join(__dirname, '..', 'config.js');
+const configPath = process.env.ONYXDOCS_CONFIG_PATH || path.join(__dirname, '..', 'config.js');
 if (!fs.existsSync(configPath)) throw new Error('Copy config.example.js to config.js and configure MySQL, baseUrl, setupKey and sessionSecret.');
 const config = require(configPath);
 if (!config.sessionSecret || config.sessionSecret.length < 32 || config.sessionSecret.startsWith('REPLACE')) throw new Error('Set a random sessionSecret of at least 32 characters in config.js.');
