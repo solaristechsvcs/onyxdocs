@@ -1,0 +1,9 @@
+{
+  "name": "onyxdocs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-hosted documentation for Solaris",
+  "scripts": {"start":"node src/server.js", "migrate":"node src/migrate.js", "test":"node --test", "check":"node --check src/server.js"},
+  "engines": {"node":">=22"},
+  "dependencies": {"bcryptjs":"^3.0.2","express":"^5.1.0","express-rate-limit":"^8.1.0","express-session":"^1.18.2","helmet":"^8.1.0","marked":"^16.4.1","mysql2":"^3.15.3","sanitize-html":"^2.17.0"}
+}
