@@ -56,7 +56,30 @@ Owners cannot demote themselves, so at least one owner remains. Password changes
 
 Create categories first and select a parent for nested sections. Then add an article, choose a unique URL slug, write Markdown, and enable Published when ready. Smaller sort positions appear first; ties sort by title. Search covers published titles, summaries and Markdown content. Article deletion permanently deletes its revisions. Categories with child categories cannot be deleted until those children are moved or removed; articles in a deleted category become uncategorized.
 
-Images use external URLs in Markdown. This version does not include uploads, public accounts, email delivery, or SSO.
+Images use external URLs in Markdown. This version does not include uploads, public accounts, or email delivery.
+
+## Discord login
+
+1. Create or select an application at https://discord.com/developers/applications.
+2. In OAuth2, add `https://YOUR-DOCS-DOMAIN/auth/discord/callback` as a redirect. Use the actual domain hosting OnyxDocs, not the reference site unless this application will replace it there.
+3. Copy the application's client ID and client secret into the `discord` block in your private root `config.js`:
+
+```js
+discord: {
+  enabled: true,
+  clientId: 'YOUR_DISCORD_APPLICATION_ID',
+  clientSecret: 'YOUR_DISCORD_CLIENT_SECRET',
+  redirectUri: 'https://YOUR-DOCS-DOMAIN/auth/discord/callback'
+},
+```
+
+4. Restart Wisp after saving the configuration. Keep the comma between this block and the next configuration entry.
+5. Sign in using the owner/staff email and password. Open Dashboard → My account, confirm your staff password, and select Link Discord. Authorize your Discord identity.
+6. Future visits can use Sign in with Discord on `/login`.
+
+Only the `identify` scope is requested; a bot token, bot installation, guild access, and email access are not needed. Discord tokens are used briefly for the identity lookup and are not saved. Login never creates a new staff account or assigns a role. Unlinked Discord identities are denied staff access. There is no automatic matching by email. Each Discord identity can link to only one staff account. Link changes and unlinking require the staff password and CSRF protection. Unlinking revokes other sessions for that staff account. Owner setup and staff account creation remain unchanged. If a password is lost, another authorized owner/admin can reset it under Staff accounts according to the existing role restrictions.
+
+The callback URL must match exactly in Discord and `config.js`. Keep `baseUrl` set to the public domain. HTTPS cookies and proxy headers must be configured correctly for the authorization state to survive the redirect. Schema migration adds the unique nullable `users.discord_id` column on startup, including existing installations. The MySQL account needs ALTER privileges for this upgrade.
 
 ## Automatic updates
 

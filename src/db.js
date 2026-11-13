@@ -16,5 +16,10 @@ async function migrate() {
     `CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(100) PRIMARY KEY, value TEXT NOT NULL)`
   ];
   for (const sql of statements) await pool.query(sql);
+  const [columns] = await pool.query("SHOW COLUMNS FROM users LIKE 'discord_id'");
+  if (!columns.length) {
+    try { await pool.query('ALTER TABLE users ADD COLUMN discord_id VARCHAR(20) NULL UNIQUE'); }
+    catch (err) { if (err.code !== 'ER_DUP_FIELDNAME') throw err; }
+  }
 }
 module.exports = {pool, config, migrate};

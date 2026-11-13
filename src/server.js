@@ -8,6 +8,8 @@ const path = require('node:path');
 const sanitize = require('sanitize-html');
 const {pool, config, migrate} = require('./db');
 const {escape: e, slug, categoryTree, validParent} = require('./helpers');
+const {discordSettings,beginFlow,consumeFlow,authorizationUrl,fetchIdentity}=require('./discord');
+const discord=discordSettings(config);
 const app = express();
 app.disable('x-powered-by');
 if (config.trustProxy) app.set('trust proxy', 1);
@@ -76,13 +78,50 @@ app.post('/setup',authLimit,async(req,res)=>{
   try {const [[lock]]=await db.query("SELECT GET_LOCK('onyxdocs_owner_setup',10) AS acquired");if(!lock.acquired)throw new Error('Setup busy');const [[row]]=await db.query('SELECT COUNT(*) AS n FROM users');if(row.n)return res.redirect('/login');await db.execute('INSERT INTO users(name,email,password,role) VALUES(?,?,?,?)',[req.body.name.slice(0,100),req.body.email.trim().toLowerCase().slice(0,190),await bcrypt.hash(req.body.password,12),'owner']);res.redirect('/login');}
   finally {await db.query("SELECT RELEASE_LOCK('onyxdocs_owner_setup')");db.release();}
 });
-app.get('/login',(req,res)=>layout(req,res,'Staff login',`<p class="eyebrow">STAFF WORKSPACE</p><h1>Welcome back.</h1>${req.query.error?'<p class="notice">Email or password is incorrect.</p>':''}${form(req,'/login',field('email','Email','','email')+field('password','Password','','password'),'Sign in')}<p>First installation? <a href="/setup">Create your owner account</a>.</p>`));
+app.get('/login',(req,res)=>layout(req,res,'Staff login',`<p class="eyebrow">STAFF WORKSPACE</p><h1>Welcome back.</h1>${discord?'<p><a class="button" href="/auth/discord">Sign in with Discord</a></p>':''}${req.query.error?'<p class="notice">Email or password is incorrect.</p>':''}${form(req,'/login',field('email','Email','','email')+field('password','Password','','password'),'Sign in')}<p>First installation? <a href="/setup">Create your owner account</a>.</p>`));
 app.post('/login',authLimit,async(req,res,next)=>{const [[u]]=await pool.execute('SELECT * FROM users WHERE email=?',[String(req.body.email || '').trim().toLowerCase()]);if(!u || !await bcrypt.compare(req.body.password || '',u.password))return res.redirect('/login?error=1');req.session.regenerate(err=>{if(err)return next(err);req.session.userId=u.id;req.session.save(err=>err?next(err):res.redirect('/admin'));});});
 app.post('/logout',(req,res,next)=>req.session.destroy(err=>err?next(err):res.redirect('/')));
+const saveSession=req=>new Promise((resolve,reject)=>req.session.save(err=>err?reject(err):resolve()));
+app.get('/auth/discord',authLimit,async(req,res)=>{
+  if(!discord)return res.status(404).send('Discord login is disabled.');
+  const state=beginFlow(req.session,'login');await saveSession(req);
+  res.redirect(authorizationUrl(discord,state));
+});
+app.get('/auth/discord/callback',authLimit,async(req,res,next)=>{
+  if(!discord)return res.sendStatus(404);
+  const flow=consumeFlow(req.session,req.query.state);await saveSession(req);
+  if(!flow || req.query.error || typeof req.query.code!=='string' || (req.query.iss && req.query.iss!=='https://discord.com'))return res.status(400).send('Discord authorization expired or was cancelled. Return to /login and try again.');
+  let identity;
+  try{identity=await fetchIdentity(discord,req.query.code);}catch{return res.status(502).send('Discord login could not be completed. Return to /login and try again.');}
+  if(flow.mode==='link'){
+    if(!req.user || req.user.id!==flow.userId)return res.sendStatus(403);
+    try{await pool.execute('UPDATE users SET discord_id=? WHERE id=?',[identity.id,req.user.id]);}
+    catch(err){if(err.code==='ER_DUP_ENTRY')return res.status(409).send('This Discord account is already linked to another staff account.');throw err;}
+    return res.redirect('/admin/account');
+  }
+  const [[user]]=await pool.execute('SELECT id FROM users WHERE discord_id=?',[identity.id]);
+  if(!user)return layout(req,res,'Account not linked','<h1>Discord account not linked</h1><p>Sign in with your staff email and password, then open My account to link Discord.</p><a href="/login">Return to staff login</a>',403);
+  req.session.regenerate(err=>{if(err)return next(err);req.session.userId=user.id;req.session.save(err=>err?next(err):res.redirect('/admin'));});
+});
 app.use('/admin',guard());
+app.get('/admin/account',async(req,res)=>{
+  const [[user]]=await pool.execute('SELECT discord_id FROM users WHERE id=?',[req.user.id]);
+  await layout(req,res,'My account',`<a href="/admin">Back to dashboard</a><h1>My account</h1><p>${e(req.user.name)} · ${e(req.user.email)}</p><h2>Discord login</h2>${discord?`<p>${user.discord_id?'Linked Discord user ID: '+e(user.discord_id):'Link your Discord account to sign in with Discord. Your staff role stays the same.'}</p>${form(req,'/admin/account/discord/link',field('password','Confirm your staff password','','password'),user.discord_id?'Change linked Discord account':'Link Discord')}${user.discord_id?form(req,'/admin/account/discord/unlink',field('password','Confirm your staff password','','password'),'Unlink Discord'):''}`:'<p>Discord login is disabled. Configure the discord block in config.js and restart to enable it.</p>'}`);
+});
+app.post('/admin/account/discord/:action',authLimit,async(req,res)=>{
+  if(!discord || !['link','unlink'].includes(req.params.action))return res.sendStatus(404);
+  const [[user]]=await pool.execute('SELECT password FROM users WHERE id=?',[req.user.id]);
+  if(!user || !await bcrypt.compare(req.body.password || '',user.password))return res.status(403).send('Staff password is incorrect. Return to My account and try again.');
+  if(req.params.action==='unlink'){
+    await pool.execute('UPDATE users SET discord_id=NULL WHERE id=?',[req.user.id]);
+    await pool.execute("DELETE FROM sessions WHERE JSON_EXTRACT(data,'$.userId')=? AND sid<>?",[req.user.id,req.sessionID]);
+    return res.redirect('/admin/account');
+  }
+  const state=beginFlow(req.session,'link');await saveSession(req);res.redirect(authorizationUrl(discord,state));
+});
 app.get('/admin',async(req,res)=>{
   const [rows]=await pool.query('SELECT a.*,c.name AS category FROM articles a LEFT JOIN categories c ON c.id=a.category_id ORDER BY a.updated_at DESC');
-  await layout(req,res,'Dashboard',`<p class="eyebrow">STAFF WORKSPACE · ${e(req.user.role)}</p><h1>Documentation dashboard</h1><div class="actions"><a class="button" href="/admin/articles/new">+ New article</a><a href="/admin/categories">Categories</a>${req.user.role!=='editor'?'<a href="/admin/users">Staff accounts</a><a href="/admin/settings">Site settings</a>':''}</div><div class="table-wrap"><table><thead><tr><th>Article</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(a=>`<tr><td>${e(a.title)}</td><td>${e(a.category || 'Uncategorized')}</td><td><span class="badge">${a.published?'Published':'Draft'}</span></td><td><a href="/admin/articles/${a.id}">Edit →</a></td></tr>`).join('')}</tbody></table></div>`);
+  await layout(req,res,'Dashboard',`<p class="eyebrow">STAFF WORKSPACE · ${e(req.user.role)}</p><h1>Documentation dashboard</h1><div class="actions"><a class="button" href="/admin/articles/new">+ New article</a><a href="/admin/categories">Categories</a><a href="/admin/account">My account</a>${req.user.role!=='editor'?'<a href="/admin/users">Staff accounts</a><a href="/admin/settings">Site settings</a>':''}</div><div class="table-wrap"><table><thead><tr><th>Article</th><th>Category</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(a=>`<tr><td>${e(a.title)}</td><td>${e(a.category || 'Uncategorized')}</td><td><span class="badge">${a.published?'Published':'Draft'}</span></td><td><a href="/admin/articles/${a.id}">Edit →</a></td></tr>`).join('')}</tbody></table></div>`);
 });
 app.get('/admin/articles/:id',async(req,res)=>{
   let a={title:'',slug:'',summary:'',content:'',position:0,published:0};let revisions=[];

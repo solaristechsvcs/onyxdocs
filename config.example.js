@@ -7,6 +7,13 @@ module.exports = {
   welcomeDescription: 'Documentation, guides, and answers for our community.',
   mainSiteUrl: 'https://solaristechsvcs.com',
   discordUrl: '',
+  discord: {
+    enabled: false,
+    clientId: '',
+    clientSecret: '',
+    // Must exactly match a redirect registered in the Discord Developer Portal.
+    redirectUri: 'https://docs.example.com/auth/discord/callback'
+  },
   sessionSecret: 'REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS',
   // Set true behind your trusted Cloudflare Tunnel/reverse proxy only.
   trustProxy: true,
