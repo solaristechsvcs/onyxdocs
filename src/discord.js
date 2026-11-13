@@ -23,6 +23,11 @@ function authorizationUrl(settings,state) {
   url.search=new URLSearchParams({client_id:settings.clientId,redirect_uri:settings.redirectUri,response_type:'code',scope:'identify',state,prompt:'consent'}).toString();
   return url.href;
 }
+function pendingLinkUrl(settings,session,now=Date.now()) {
+  const flow=session.discordOAuth;
+  if(!flow || flow.mode!=='link' || !session.userId || flow.userId!==session.userId || flow.expires<now || !/^[a-f0-9]{64}$/.test(flow.state || ''))return null;
+  return authorizationUrl(settings,flow.state);
+}
 async function fetchIdentity(settings,code,fetcher=fetch) {
   const response=await fetcher('https://discord.com/api/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:settings.clientId,client_secret:settings.clientSecret,grant_type:'authorization_code',code,redirect_uri:settings.redirectUri}),signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw new Error('Discord token exchange failed.');
@@ -32,4 +37,4 @@ async function fetchIdentity(settings,code,fetcher=fetch) {
   const user=await result.json();if(typeof user.id!=='string' || !/^\d{17,20}$/.test(user.id))throw new Error('Discord identity invalid.');
   return {id:user.id};
 }
-module.exports={discordSettings,beginFlow,consumeFlow,authorizationUrl,fetchIdentity};
+module.exports={discordSettings,beginFlow,consumeFlow,authorizationUrl,pendingLinkUrl,fetchIdentity};

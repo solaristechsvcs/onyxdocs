@@ -1,3 +1,5 @@
+const discordContinue=document.querySelector('a[data-discord-authorize]');
+if(discordContinue){const target=new URL(discordContinue.href);if(target.origin==='https://discord.com' && target.pathname==='/oauth2/authorize')window.location.assign(target.href);}
 try { if(localStorage.getItem('onyx-theme')==='light') document.documentElement.classList.add('light'); } catch {}
 document.querySelector('#theme-toggle')?.addEventListener('click',()=>{const light=document.documentElement.classList.toggle('light');try{localStorage.setItem('onyx-theme',light?'light':'dark');}catch{}});
 const toc = document.querySelector('#toc');

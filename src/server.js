@@ -8,7 +8,7 @@ const path = require('node:path');
 const sanitize = require('sanitize-html');
 const {pool, config, migrate} = require('./db');
 const {escape: e, slug, categoryTree, validParent} = require('./helpers');
-const {discordSettings,beginFlow,consumeFlow,authorizationUrl,fetchIdentity}=require('./discord');
+const {discordSettings,beginFlow,consumeFlow,authorizationUrl,pendingLinkUrl,fetchIdentity}=require('./discord');
 const discord=discordSettings(config);
 const app = express();
 app.disable('x-powered-by');
@@ -108,6 +108,11 @@ app.get('/admin/account',async(req,res)=>{
   const [[user]]=await pool.execute('SELECT discord_id FROM users WHERE id=?',[req.user.id]);
   await layout(req,res,'My account',`<a href="/admin">Back to dashboard</a><h1>My account</h1><p>${e(req.user.name)} · ${e(req.user.email)}</p><h2>Discord login</h2>${discord?`<p>${user.discord_id?'Linked Discord user ID: '+e(user.discord_id):'Link your Discord account to sign in with Discord. Your staff role stays the same.'}</p>${form(req,'/admin/account/discord/link',field('password','Confirm your staff password','','password'),user.discord_id?'Change linked Discord account':'Link Discord')}${user.discord_id?form(req,'/admin/account/discord/unlink',field('password','Confirm your staff password','','password'),'Unlink Discord'):''}`:'<p>Discord login is disabled. Configure the discord block in config.js and restart to enable it.</p>'}`);
 });
+app.get('/admin/account/discord/authorize',async(req,res)=>{
+  const url=discord && pendingLinkUrl(discord,req.session);
+  if(!url)return layout(req,res,'Link expired','<h1>Discord linking expired</h1><p>Return to My account and confirm your password to try again.</p><a href="/admin/account">Back to My account</a>',400);
+  await layout(req,res,'Continue to Discord',`<h1>Connecting to Discord</h1><p>Opening Discord to link your account. If you are not redirected, use the button below.</p><a class="button" data-discord-authorize href="${e(url)}">Continue to Discord</a><p><a href="/admin/account">Cancel and return to My account</a></p>`);
+});
 app.post('/admin/account/discord/:action',authLimit,async(req,res)=>{
   if(!discord || !['link','unlink'].includes(req.params.action))return res.sendStatus(404);
   const [[user]]=await pool.execute('SELECT password FROM users WHERE id=?',[req.user.id]);
@@ -117,7 +122,7 @@ app.post('/admin/account/discord/:action',authLimit,async(req,res)=>{
     await pool.execute("DELETE FROM sessions WHERE JSON_EXTRACT(data,'$.userId')=? AND sid<>?",[req.user.id,req.sessionID]);
     return res.redirect('/admin/account');
   }
-  const state=beginFlow(req.session,'link');await saveSession(req);res.redirect(authorizationUrl(discord,state));
+  beginFlow(req.session,'link');await saveSession(req);res.redirect(303,'/admin/account/discord/authorize');
 });
 app.get('/admin',async(req,res)=>{
   const [rows]=await pool.query('SELECT a.*,c.name AS category FROM articles a LEFT JOIN categories c ON c.id=a.category_id ORDER BY a.updated_at DESC');
